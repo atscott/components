@@ -9,11 +9,13 @@
 import {Directionality} from '@angular/cdk/bidi';
 import {ListRange} from '@angular/cdk/collections';
 import {
+  afterNextRender,
   booleanAttribute,
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
   ElementRef,
+  EnvironmentInjector,
   inject,
   Inject,
   Input,
@@ -172,6 +174,7 @@ export class CdkVirtualScrollViewport extends CdkVirtualScrollable implements On
 
   /** Subscription to changes in the viewport size. */
   private _viewportChanges = Subscription.EMPTY;
+  private readonly injector = inject(EnvironmentInjector);
 
   constructor(
     public override elementRef: ElementRef<HTMLElement>,
@@ -498,23 +501,25 @@ export class CdkVirtualScrollViewport extends CdkVirtualScrollable implements On
 
   /** Run change detection. */
   private _doChangeDetection() {
-    this._isChangeDetectionPending = false;
-
-    // Apply the content transform. The transform can't be set via an Angular binding because
-    // bypassSecurityTrustStyle is banned in Google. However the value is safe, it's composed of
-    // string literals, a variable that can only be 'X' or 'Y', and user input that is run through
-    // the `Number` function first to coerce it to a numeric value.
-    this._contentWrapper.nativeElement.style.transform = this._renderedContentTransform;
-    // Apply changes to Angular bindings. Note: We must call `markForCheck` to run change detection
-    // from the root, since the repeated items are content projected in. Calling `detectChanges`
-    // instead does not properly check the projected content.
-    this.ngZone.run(() => this._changeDetectorRef.markForCheck());
-
-    const runAfterChangeDetection = this._runAfterChangeDetection;
-    this._runAfterChangeDetection = [];
-    for (const fn of runAfterChangeDetection) {
-      fn();
-    }
+    this.ngZone.run(() => {
+      this._changeDetectorRef.markForCheck();
+      afterNextRender(
+        () => {
+          this._isChangeDetectionPending = false;
+          // Apply the content transform. The transform can't be set via an Angular binding because
+          // bypassSecurityTrustStyle is banned in Google. However the value is safe, it's composed of
+          // string literals, a variable that can only be 'X' or 'Y', and user input that is run through
+          // the `Number` function first to coerce it to a numeric value.
+          this._contentWrapper.nativeElement.style.transform = this._renderedContentTransform;
+          const runAfterChangeDetection = this._runAfterChangeDetection;
+          this._runAfterChangeDetection = [];
+          for (const fn of runAfterChangeDetection) {
+            fn();
+          }
+        },
+        {injector: this.injector},
+      );
+    });
   }
 
   /** Calculates the `style.width` and `style.height` for the spacer element. */
